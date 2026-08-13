@@ -39,10 +39,26 @@ function crossOriginFetch(url, opts = {}) {
   return window.PouchDB.fetch(url, { ...opts, credentials: 'include' });
 }
 
+// A phone with its own working network but an unreachable COUCH_ORIGIN (the
+// home machine is off) does not fail fast - fetch() hangs on the TCP connect
+// for a long time before rejecting. boot() awaits getSession() before it
+// paints anything, so without a timeout the whole app sits stuck on the
+// static "Loading..." markup for as long as that hang lasts. Racing a short
+// timeout is what turns that into "offline" almost immediately instead.
+async function fetchWithTimeout(url, opts, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  try {
+    return await crossOriginFetch(url, { ...opts, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function getSession() {
   let res;
   try {
-    res = await crossOriginFetch(`${COUCH_ORIGIN}/_session`);
+    res = await fetchWithTimeout(`${COUCH_ORIGIN}/_session`, {}, 4000);
   } catch {
     // Offline: the request never reached the server, so this says nothing
     // about whether the session is actually valid. But the browser is
