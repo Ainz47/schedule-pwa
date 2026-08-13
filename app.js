@@ -363,11 +363,16 @@ async function boot() {
   await resolveTemplateConflicts(state.local);
 
   // One shot and idempotent: after the split no check shares a task with a
-  // block, so every later boot finds nothing and writes nothing.
-  const migrated = migrateDedicatedTasks(state.template, state.now.toISOString());
-  if (migrated.changed) {
-    state.template = await saveTemplate(state.local, migrated.template);
-    paint();
+  // block, so every later boot finds nothing and writes nothing. Skipped while
+  // the template is still null: on a fresh install the local database has not
+  // synced schedule:v1 yet, and dereferencing it here would abort boot before
+  // startSync() below runs, leaving the app stuck on the empty state forever.
+  if (state.template) {
+    const migrated = migrateDedicatedTasks(state.template, state.now.toISOString());
+    if (migrated.changed) {
+      state.template = await saveTemplate(state.local, migrated.template);
+      paint();
+    }
   }
 
   startSync(state.local, async (status) => {
